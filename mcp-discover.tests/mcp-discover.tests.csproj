@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Mcp.TestServer</RootNamespace>
+    <AssemblyName>mcp-test-server</AssemblyName>
+  </PropertyGroup>
+
+  <Target Name="RunMcpDiscovery" AfterTargets="Build">
+    <Message Text="Running MCP Discovery Tool..." Importance="high" />
+    
+    <!-- Define paths -->
+    <PropertyGroup>
+      <McpDiscoverTool>$(MSBuildProjectDirectory)\..\mcp-discover\bin\$(Configuration)\net10.0\mcp-discover.exe</McpDiscoverTool>
+      <InputDir>$(MSBuildProjectDirectory)\$(OutputPath)</InputDir>
+      <OutputDir>$(MSBuildProjectDirectory)\$(OutputPath)mcp-metadata</OutputDir>
+    </PropertyGroup>
+
+    <!-- Run the discovery tool -->
+    <Exec Command="&quot;$(McpDiscoverTool)&quot; &quot;$(InputDir)&quot; &quot;$(OutputDir)&quot;" 
+          IgnoreExitCode="false"
+          ContinueOnError="true"
+    >
+      <Output TaskParameter="ConsoleOutput" PropertyName="McpDiscoveryOutput" />
+    </Exec>
+    
+    <Message Text="$(McpDiscoveryOutput)" Importance="high" />
+    <Message Text="MCP metadata generated at: $(OutputDir)" Importance="high" />
+  </Target>
+</Project>

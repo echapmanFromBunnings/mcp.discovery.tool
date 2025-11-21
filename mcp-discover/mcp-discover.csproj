@@ -11,7 +11,28 @@
     <PackageId>mcp-discover</PackageId>
     <Version>1.0.0</Version>
     <Authors>echapmanFromBunnings</Authors>
-    <Description>A tool to help identify what tools/prompts/resources an MCP server has within it.</Description>
+    <Description>A .NET command-line tool for discovering MCP (Model Context Protocol) capabilities in compiled assemblies through reflection. Scans assemblies for tools, resources, and prompts decorated with MCP attributes and generates structured JSON metadata.</Description>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryUrl>https://github.com/echapmanFromBunnings/mcp.discovery.tool</RepositoryUrl>
+    <PackageTags>mcp;model-context-protocol;discovery;reflection;metadata;tools</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+</Project>
+    <PackageTags>aspnetcore;tool;modelcontextprotocol</PackageTags>
+    <RepositoryUrl>https://github.com/echapmanFromBunnings/mcp.discovery.tool</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/echapmanFromBunnings/mcp.discovery.tool</PackageProjectUrl>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    <RepositoryType>git</RepositoryType>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
 
 </Project>
