@@ -1,0 +1,37 @@
+name: Publish
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '10.0.x'
+    
+    - name: Restore dependencies
+      run: dotnet restore mcp-discover/mcp-discover.csproj
+    
+    - name: Build
+      run: dotnet build mcp-discover/mcp-discover.csproj --no-restore --configuration Release
+    
+    - name: Pack
+      run: dotnet pack mcp-discover/mcp-discover.csproj --no-build --configuration Release --output ./nupkg
+    
+    - name: Publish to NuGet
+      run: dotnet nuget push ./nupkg/*.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
+      if: github.event_name == 'release'
+    
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: nupkg
+        path: ./nupkg/*.nupkg

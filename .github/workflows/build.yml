@@ -1,0 +1,29 @@
+name: Build
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '10.0.x'
+    
+    - name: Restore dependencies
+      run: dotnet restore mcp-discover/mcp-discover.csproj
+    
+    - name: Build
+      run: dotnet build mcp-discover/mcp-discover.csproj --no-restore --configuration Release
+    
+    - name: Test run
+      run: dotnet run --project mcp-discover/mcp-discover.csproj --no-build --configuration Release
