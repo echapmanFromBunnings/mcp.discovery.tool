@@ -13,13 +13,13 @@
     
     <!-- Define paths -->
     <PropertyGroup>
-      <McpDiscoverTool>$(MSBuildProjectDirectory)\..\mcp-discover\bin\$(Configuration)\net10.0\mcp-discover.exe</McpDiscoverTool>
+      <McpDiscoverTool>$(MSBuildProjectDirectory)\..\mcp-discover-dotnet\bin\$(Configuration)\net10.0\mcp-discover-dotnet.exe</McpDiscoverTool>
       <InputDir>$(MSBuildProjectDirectory)\$(OutputPath)</InputDir>
       <OutputDir>$(MSBuildProjectDirectory)\$(OutputPath)mcp-metadata</OutputDir>
     </PropertyGroup>
 
     <!-- Run the discovery tool -->
-    <Exec Command="&quot;$(McpDiscoverTool)&quot; &quot;$(InputDir)&quot; &quot;$(OutputDir)&quot;" 
+    <Exec Command="&quot;$(McpDiscoverTool)&quot; &quot;$(InputDir)&quot; &quot;$(OutputDir)&quot; -m -o -n" 
           IgnoreExitCode="false"
           ContinueOnError="true"
     >

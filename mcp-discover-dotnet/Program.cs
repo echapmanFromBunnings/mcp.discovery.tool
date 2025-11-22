@@ -41,9 +41,21 @@ internal static class McpDiscoveryApp
             string.Equals(a, "-m", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(a, "--markdown", StringComparison.OrdinalIgnoreCase));
 
+        var omitBasePath = args.Any(a => 
+            string.Equals(a, "-o", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(a, "--omit-path", StringComparison.OrdinalIgnoreCase));
+
+        var noTimestamp = args.Any(a => 
+            string.Equals(a, "-n", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(a, "--no-timestamp", StringComparison.OrdinalIgnoreCase));
+
         var filteredArgs = args.Where(a => 
             !string.Equals(a, "-m", StringComparison.OrdinalIgnoreCase) &&
-            !string.Equals(a, "--markdown", StringComparison.OrdinalIgnoreCase)).ToArray();
+            !string.Equals(a, "--markdown", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(a, "-o", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(a, "--omit-path", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(a, "-n", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(a, "--no-timestamp", StringComparison.OrdinalIgnoreCase)).ToArray();
 
         if (filteredArgs.Length < 2)
         {
@@ -89,7 +101,7 @@ internal static class McpDiscoveryApp
 
         var result = new McpDiscoveryResult
         {
-            GeneratedAtUtc = DateTimeOffset.UtcNow,
+            GeneratedAtUtc = noTimestamp ? null : DateTimeOffset.UtcNow,
             Assemblies = new List<McpAssemblyMetadata>()
         };
 
@@ -99,7 +111,7 @@ internal static class McpDiscoveryApp
         foreach (var assemblyPath in assemblyPaths)
         {
             Console.Write($"   Scanning {Path.GetFileName(assemblyPath)}... ");
-            var assemblyMetadata = ScanAssembly(assemblyPath);
+            var assemblyMetadata = ScanAssembly(assemblyPath, inputDir, omitBasePath);
             if (assemblyMetadata != null && assemblyMetadata.Classes.Count > 0)
             {
                 result.Assemblies.Add(assemblyMetadata);
@@ -155,7 +167,7 @@ internal static class McpDiscoveryApp
         return 0;
     }
 
-    private static McpAssemblyMetadata? ScanAssembly(string assemblyPath)
+    private static McpAssemblyMetadata? ScanAssembly(string assemblyPath, string basePath, bool omitBasePath)
     {
         var context = new IsolatedAssemblyLoadContext(assemblyPath);
         try
@@ -188,13 +200,23 @@ internal static class McpDiscoveryApp
                 });
             }
 
-            return classes.Count == 0
-                ? null
-                : new McpAssemblyMetadata
-                {
-                    AssemblyPath = assemblyPath,
-                    Classes = classes
-                };
+            if (classes.Count == 0)
+            {
+                return null;
+            }
+
+            var outputPath = assemblyPath;
+            if (omitBasePath)
+            {
+                var relativePath = Path.GetRelativePath(basePath, assemblyPath);
+                outputPath = relativePath.StartsWith("..") ? Path.GetFileName(assemblyPath) : relativePath;
+            }
+
+            return new McpAssemblyMetadata
+            {
+                AssemblyPath = outputPath,
+                Classes = classes
+            };
         }
         catch (Exception ex)
         {
@@ -373,8 +395,12 @@ internal static class McpDiscoveryApp
         // Header
         sb.AppendLine("# MCP Discovery Report");
         sb.AppendLine();
-        sb.AppendLine($"**Generated:** {result.GeneratedAtUtc:yyyy-MM-dd HH:mm:ss UTC}");
-        sb.AppendLine();
+        
+        if (result.GeneratedAtUtc.HasValue)
+        {
+            sb.AppendLine($"**Generated:** {result.GeneratedAtUtc.Value:yyyy-MM-dd HH:mm:ss UTC}");
+            sb.AppendLine();
+        }
         
         // Summary
         var totalClasses = result.Assemblies.Sum(a => a.Classes.Count);
@@ -562,6 +588,23 @@ internal static class McpDiscoveryApp
             .Replace("\r", "");
     }
 
+    private static string GetVersion()
+    {
+        var assembly = Assembly.GetExecutingAssembly();
+        var version = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
+                     ?? assembly.GetName().Version?.ToString()
+                     ?? "0.0.0";
+        
+        // Remove git commit hash if present (e.g., "1.0.0+abc123" -> "1.0.0")
+        var plusIndex = version.IndexOf('+');
+        if (plusIndex > 0)
+        {
+            version = version.Substring(0, plusIndex);
+        }
+        
+        return version;
+    }
+
     private static void PrintBanner()
     {
         Console.ForegroundColor = ConsoleColor.Cyan;
@@ -573,7 +616,7 @@ internal static class McpDiscoveryApp
                                                          |___|");
         Console.ResetColor();
         Console.ForegroundColor = ConsoleColor.DarkCyan;
-        Console.WriteLine("  Model Context Protocol Discovery Tool v1.0.0");
+        Console.WriteLine($"  Model Context Protocol Discovery Tool v{GetVersion()}");
         Console.ResetColor();
         Console.WriteLine();
     }
@@ -582,7 +625,7 @@ internal static class McpDiscoveryApp
     {
         Console.WriteLine("Usage:");
         Console.ForegroundColor = ConsoleColor.White;
-        Console.WriteLine("  mcp-discover <input-directory> <output-directory>");
+        Console.WriteLine("  mcp-discover-dotnet <input-directory> <output-directory>");
         Console.ResetColor();
         Console.WriteLine();
         Console.WriteLine("Description:");
@@ -596,24 +639,26 @@ internal static class McpDiscoveryApp
         Console.WriteLine("Options:");
         Console.WriteLine("  -h, --help         Show this help information");
         Console.WriteLine("  -m, --markdown     Generate markdown report alongside JSON");
+        Console.WriteLine("  -o, --omit-path    Omit base path from assembly paths in output");
+        Console.WriteLine("  -n, --no-timestamp Omit timestamp from output (for version control)");
         Console.WriteLine();
         Console.WriteLine("Examples:");
         Console.ForegroundColor = ConsoleColor.DarkGray;
         Console.WriteLine("  # Scan build output");
         Console.ForegroundColor = ConsoleColor.Yellow;
-        Console.WriteLine("  mcp-discover ./bin/Release/net10.0 ./metadata");
+        Console.WriteLine("  mcp-discover-dotnet ./bin/Release/net10.0 ./metadata");
         Console.ResetColor();
         Console.WriteLine();
         Console.ForegroundColor = ConsoleColor.DarkGray;
         Console.WriteLine("  # Scan current directory");
         Console.ForegroundColor = ConsoleColor.Yellow;
-        Console.WriteLine("  mcp-discover . ./output");
+        Console.WriteLine("  mcp-discover-dotnet . ./output");
         Console.ResetColor();
         Console.WriteLine();
         Console.ForegroundColor = ConsoleColor.DarkGray;
         Console.WriteLine("  # Generate markdown report");
         Console.ForegroundColor = ConsoleColor.Yellow;
-        Console.WriteLine("  mcp-discover ./bin/Release/net10.0 ./metadata --markdown");
+        Console.WriteLine("  mcp-discover-dotnet ./bin/Release/net10.0 ./metadata --markdown");
         Console.ResetColor();
         Console.WriteLine();
         Console.WriteLine("What it discovers:");
@@ -666,7 +711,7 @@ internal sealed class IsolatedAssemblyLoadContext : AssemblyLoadContext
 
 internal sealed class McpDiscoveryResult
 {
-    public DateTimeOffset GeneratedAtUtc { get; set; }
+    public DateTimeOffset? GeneratedAtUtc { get; set; }
     public List<McpAssemblyMetadata> Assemblies { get; set; } = new();
 }
 

@@ -1,9 +1,8 @@
-﻿
-Microsoft Visual Studio Solution File, Format Version 12.00
+﻿Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "mcp-discover", "mcp-discover\mcp-discover.csproj", "{5B241BA4-CD4B-4B39-B6AD-A92108AA51F5}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "mcp-discover-dotnet", "mcp-discover-dotnet\mcp-discover-dotnet.csproj", "{5B241BA4-CD4B-4B39-B6AD-A92108AA51F5}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "mcp-discover.tests", "mcp-discover.tests\mcp-discover.tests.csproj", "{78DEC89A-3935-4B41-8BDB-5A72D4498A6A}"
 EndProject

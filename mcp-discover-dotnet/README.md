@@ -1,10 +1,10 @@
-# mcp-discover
+# mcp-discover-dotnet
 
 A .NET command-line tool for discovering MCP (Model Context Protocol) capabilities in compiled assemblies through reflection.
 
 ## What It Does
 
-`mcp-discover` scans .NET assemblies (DLLs) and extracts MCP server metadata by analyzing custom attributes. It identifies:
+`mcp-discover-dotnet` scans .NET assemblies (DLLs) and extracts MCP server metadata by analyzing custom attributes. It identifies:
 
 - **Tools** - Executable functions decorated with `[McpServerToolType]` and `[McpServerTool]`
 - **Resources** - Content providers decorated with `[McpServerResourceType]` and `[McpServerResource]`
@@ -17,25 +17,25 @@ The tool generates a structured JSON file (`mcp-metadata.json`) containing all d
 ### As a Global .NET Tool (Recommended)
 
 ```bash
-dotnet tool install -g mcp-discover
+dotnet tool install -g mcp-discover-dotnet
 ```
 
 ### From Source
 
 ```bash
 git clone <repository-url>
-cd mcp.discovery.tool/mcp-discover
+cd mcp.discovery.tool/mcp-discover-dotnet
 dotnet build -c Release
 ```
 
-The executable will be at `bin/Release/net10.0/mcp-discover.exe` (Windows) or `bin/Release/net10.0/mcp-discover` (Linux/macOS).
+The executable will be at `bin/Release/net10.0/mcp-discover-dotnet.exe` (Windows) or `bin/Release/net10.0/mcp-discover-dotnet` (Linux/macOS).
 
 ## Usage
 
 ### Command Syntax
 
 ```bash
-mcp-discover <input-directory> <output-directory> [options]
+mcp-discover-dotnet <input-directory> <output-directory> [options]
 ```
 
 **Arguments:**
@@ -45,27 +45,38 @@ mcp-discover <input-directory> <output-directory> [options]
 **Options:**
 - `-h, --help` - Display help information
 - `-m, --markdown` - Generate markdown report alongside JSON output
+- `-o, --omit-path` - Omit base path from assembly paths in output (use relative paths)
 
 ### Examples
 
 **Basic usage:**
 ```bash
-mcp-discover ./bin/Release/net10.0 ./metadata
+mcp-discover-dotnet ./bin/Release/net10.0 ./metadata
 ```
 
 **Generate markdown report:**
 ```bash
-mcp-discover ./bin/Release/net10.0 ./metadata --markdown
+mcp-discover-dotnet ./bin/Release/net10.0 ./metadata --markdown
+```
+
+**Use relative paths in output:**
+```bash
+mcp-discover-dotnet ./bin/Release/net10.0 ./metadata --omit-path
+```
+
+**Combine options:**
+```bash
+mcp-discover-dotnet ./bin/Release/net10.0 ./metadata --markdown --omit-path
 ```
 
 **With .NET tool:**
 ```bash
-dotnet tool run mcp-discover ./bin/Release/net10.0 ./metadata -m
+dotnet tool run mcp-discover-dotnet ./bin/Release/net10.0 ./metadata -m -o
 ```
 
 **Scan current build output:**
 ```bash
-mcp-discover . ./mcp-output
+mcp-discover-dotnet . ./mcp-output
 ```
 
 ## Output Format
@@ -100,6 +111,11 @@ The tool generates a JSON file with the following structure:
   ]
 }
 ```
+
+**Note on Assembly Paths:**
+- By default, `AssemblyPath` contains the full absolute path to each assembly
+- With `--omit-path`, paths are relative to the input directory (e.g., `bin\Debug\MyAssembly.dll` instead of `C:\Projects\MyApp\bin\Debug\MyAssembly.dll`)
+- This is useful for creating portable metadata files that can be shared across different environments
 
 ### Markdown Report Format (Optional)
 
@@ -172,15 +188,38 @@ See the [mcp-discover.tests](../mcp-discover.tests) project for complete example
 Add this target to your `.csproj` file to automatically run discovery after build:
 
 ```xml
-<Target Name="RunMcpDiscovery" AfterTargets="Build">
-  <PropertyGroup>
-    <McpDiscoverTool>mcp-discover</McpDiscoverTool>
-    <InputDir>$(MSBuildProjectDirectory)\$(OutputPath)</InputDir>
-    <OutputDir>$(MSBuildProjectDirectory)\$(OutputPath)mcp-metadata</OutputDir>
-  </PropertyGroup>
-  
-  <Exec Command="$(McpDiscoverTool) &quot;$(InputDir)&quot; &quot;$(OutputDir)&quot;" />
-</Target>
+  <Target Name="RunMcpDiscovery" AfterTargets="Build">
+    <Message Text="Running MCP Discovery Tool..." Importance="high" />
+
+    <Message Text="Restoring first..." Importance="high" />
+    <!-- Run the restore -->
+    <Exec Command="dotnet tool restore"
+          IgnoreExitCode="false"
+          ContinueOnError="true"
+    >
+        <Output TaskParameter="ConsoleOutput" PropertyName="McpDiscoveryOutput" />
+    </Exec>
+    
+    <Message Text="$(McpDiscoveryOutput)" Importance="high" />
+    
+    <!-- Define paths -->
+    <PropertyGroup>
+        <McpDiscoverTool>dotnet tool run mcp-discover-dotnet</McpDiscoverTool>
+        <InputDir>$(MSBuildProjectDirectory)\$(OutputPath)</InputDir>
+        <OutputDir>$(MSBuildProjectDirectory)\mcp-metadata</OutputDir>
+    </PropertyGroup>
+
+    <!-- Run the discovery tool -->
+    <Exec Command="$(McpDiscoverTool) $(InputDir) $(OutputDir)"
+          IgnoreExitCode="false"
+          ContinueOnError="true"
+    >
+        <Output TaskParameter="ConsoleOutput" PropertyName="McpDiscoveryOutput" />
+    </Exec>
+
+    <Message Text="$(McpDiscoveryOutput)" Importance="high" />
+    <Message Text="MCP metadata generated at: $(OutputDir)" Importance="high" />
+  </Target>
 ```
 
 ## How It Works
@@ -221,9 +260,9 @@ The tool handles common issues gracefully:
 dotnet build -c Release
 
 # Run discovery
-mcp-discover ./bin/Release/net10.0 ./metadata
+mcp-discover-dotnet ./bin/Release/net10.0 ./metadata
 
-# Output: ./metadata/mcp-metadata.json
+# Output: ./mcp-metadata/mcp-metadata.json
 ```
 
 ### View Results
@@ -243,8 +282,8 @@ cat ./metadata/mcp-metadata.json | jq .
 - name: Build and Discover
   run: |
     dotnet build -c Release
-    dotnet tool install -g mcp-discover
-    mcp-discover ./bin/Release/net10.0 ./metadata
+    dotnet tool install -g mcp-discover-dotnet
+    mcp-discover-dotnet ./bin/Release/net10.0 ./metadata
     
 - name: Upload Metadata
   uses: actions/upload-artifact@v3
@@ -266,10 +305,6 @@ cat ./metadata/mcp-metadata.json | jq .
 
 **Problem:** Empty output / no capabilities found  
 **Solution:** Verify your assemblies have the correct MCP attributes applied.
-
-## Version
-
-Current version: **1.0.0**
 
 ## Author
 
