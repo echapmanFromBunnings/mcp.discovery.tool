@@ -265,10 +265,6 @@ Contributions are welcome! Areas for improvement:
 - Additional output formats (XML, YAML, etc.)
 - Integration examples for other build systems
 
-## License
-
-[Add your license information here]
-
 ## Author
 
 echapmanFromBunnings
