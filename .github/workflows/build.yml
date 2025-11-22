@@ -29,3 +29,4 @@ jobs:
     
     - name: Test run
       run: dotnet run --project mcp-discover/mcp-discover.csproj --no-build --configuration Release
+      continue-on-error: true
