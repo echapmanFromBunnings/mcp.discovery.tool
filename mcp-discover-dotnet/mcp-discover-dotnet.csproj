@@ -10,7 +10,7 @@
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>mcp-discover-dotnet</ToolCommandName>
     <PackageId>mcp-discover-dotnet</PackageId>
-    <Version>0.0.3</Version>
+    <Version>0.0.4</Version>
     <Authors>echapmanFromBunnings</Authors>
     <Description>A tool to help identify what tools/prompts/resources an MCP server has within it.</Description>
 
