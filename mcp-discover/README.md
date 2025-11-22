@@ -35,7 +35,7 @@ The executable will be at `bin/Release/net10.0/mcp-discover.exe` (Windows) or `b
 ### Command Syntax
 
 ```bash
-mcp-discover <input-directory> <output-directory>
+mcp-discover <input-directory> <output-directory> [options]
 ```
 
 **Arguments:**
@@ -44,6 +44,7 @@ mcp-discover <input-directory> <output-directory>
 
 **Options:**
 - `-h, --help` - Display help information
+- `-m, --markdown` - Generate markdown report alongside JSON output
 
 ### Examples
 
@@ -52,9 +53,14 @@ mcp-discover <input-directory> <output-directory>
 mcp-discover ./bin/Release/net10.0 ./metadata
 ```
 
+**Generate markdown report:**
+```bash
+mcp-discover ./bin/Release/net10.0 ./metadata --markdown
+```
+
 **With .NET tool:**
 ```bash
-dotnet tool run mcp-discover ./bin/Release/net10.0 ./metadata
+dotnet tool run mcp-discover ./bin/Release/net10.0 ./metadata -m
 ```
 
 **Scan current build output:**
@@ -93,6 +99,31 @@ The tool generates a JSON file with the following structure:
     }
   ]
 }
+```
+
+### Markdown Report Format (Optional)
+
+When using the `--markdown` flag, the tool also generates a human-readable markdown report (`mcp-metadata.md`) that includes:
+
+- **Summary section** with counts of discovered capabilities
+- **Tools section** with tables organized by tool type
+- **Resources section** with tables organized by resource type
+- **Prompts section** with tables organized by prompt type
+- **Assembly details** with breakdown by assembly
+
+Example markdown table output:
+
+```markdown
+## 🔧 Tools
+
+### Mcp.TestServer.CalculatorTools
+
+*Basic arithmetic operations*
+
+| Name | Title | Description | Audiences |
+|------|-------|-------------|-----------|
+| `add` | Add Numbers | Adds two integers | developers |
+| `subtract` | Subtract Numbers | Subtracts integers | developers |
 ```
 
 ## Required Attributes

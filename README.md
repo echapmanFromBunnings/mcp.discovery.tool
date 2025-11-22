@@ -29,6 +29,11 @@ The tool generates a `mcp-metadata.json` file with:
 - Methods/members with their metadata (name, title, description, audiences)
 - Timestamp of generation
 
+Optionally, with the `--markdown` flag, it also generates a `mcp-metadata.md` file with:
+- Human-readable summary
+- Tables organized by capability type (Tools, Resources, Prompts)
+- Assembly details and statistics
+
 ## Installation & Usage
 
 ### Prerequisites
@@ -87,6 +92,7 @@ Arguments:
 
 Options:
   -h, --help       Show help information
+  -m, --markdown   Generate markdown report alongside JSON
 ```
 
 ### Example
@@ -95,7 +101,11 @@ Options:
 # Scan assemblies in bin/Release/net10.0 and output to metadata folder
 mcp-discover ./bin/Release/net10.0 ./metadata
 
+# Generate both JSON and markdown reports
+mcp-discover ./bin/Release/net10.0 ./metadata --markdown
+
 # Output: ./metadata/mcp-metadata.json
+#         ./metadata/mcp-metadata.md (if --markdown used)
 ```
 
 ## Quick Start with Test Server

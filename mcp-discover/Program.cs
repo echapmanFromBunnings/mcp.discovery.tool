@@ -32,23 +32,44 @@ internal static class McpDiscoveryApp
     {
         if (ShouldShowHelp(args))
         {
+            PrintBanner();
             PrintUsage();
             return 0;
         }
 
-        if (args.Length < 2)
+        var generateMarkdown = args.Any(a => 
+            string.Equals(a, "-m", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(a, "--markdown", StringComparison.OrdinalIgnoreCase));
+
+        var filteredArgs = args.Where(a => 
+            !string.Equals(a, "-m", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(a, "--markdown", StringComparison.OrdinalIgnoreCase)).ToArray();
+
+        if (filteredArgs.Length < 2)
         {
-            Console.Error.WriteLine("error: input and output directories are required.");
+            PrintBanner();
+            Console.Error.WriteLine();
+            Console.Error.WriteLine("❌ Error: input and output directories are required.");
+            Console.Error.WriteLine();
             PrintUsage();
             return 1;
         }
 
-        var inputDir = Path.GetFullPath(args[0]);
-        var outputDir = Path.GetFullPath(args[1]);
+        PrintBanner();
+
+        var inputDir = Path.GetFullPath(filteredArgs[0]);
+        var outputDir = Path.GetFullPath(filteredArgs[1]);
+
+        Console.WriteLine();
+        Console.WriteLine($"📂 Input:  {inputDir}");
+        Console.WriteLine($"📁 Output: {outputDir}");
+        Console.WriteLine();
 
         if (!Directory.Exists(inputDir))
         {
-            Console.Error.WriteLine($"error: input directory '{inputDir}' was not found.");
+            Console.Error.WriteLine($"❌ Error: input directory '{inputDir}' was not found.");
+            Console.Error.WriteLine();
+            Console.Error.WriteLine("💡 Tip: Make sure the path exists and try using an absolute path.");
             return 1;
         }
 
@@ -57,7 +78,13 @@ internal static class McpDiscoveryApp
         var assemblyPaths = Directory.EnumerateFiles(inputDir, "*.dll", SearchOption.AllDirectories).ToList();
         if (assemblyPaths.Count == 0)
         {
-            Console.WriteLine($"warning: no assemblies found under '{inputDir}'.");
+            Console.WriteLine($"⚠️  Warning: no assemblies found under '{inputDir}'.");
+            Console.WriteLine();
+        }
+        else
+        {
+            Console.WriteLine($"🔍 Found {assemblyPaths.Count} assemblies to scan...");
+            Console.WriteLine();
         }
 
         var result = new McpDiscoveryResult
@@ -66,20 +93,65 @@ internal static class McpDiscoveryApp
             Assemblies = new List<McpAssemblyMetadata>()
         };
 
+        var totalClasses = 0;
+        var totalMembers = 0;
+
         foreach (var assemblyPath in assemblyPaths)
         {
-            Console.WriteLine($"Scanning {assemblyPath}...");
+            Console.Write($"   Scanning {Path.GetFileName(assemblyPath)}... ");
             var assemblyMetadata = ScanAssembly(assemblyPath);
             if (assemblyMetadata != null && assemblyMetadata.Classes.Count > 0)
             {
                 result.Assemblies.Add(assemblyMetadata);
+                var classCount = assemblyMetadata.Classes.Count;
+                var memberCount = assemblyMetadata.Classes.Sum(c => c.Members.Count);
+                totalClasses += classCount;
+                totalMembers += memberCount;
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine($"✓ ({classCount} classes, {memberCount} members)");
+                Console.ResetColor();
+            }
+            else
+            {
+                Console.ForegroundColor = ConsoleColor.DarkGray;
+                Console.WriteLine("(no MCP metadata)");
+                Console.ResetColor();
             }
         }
+
+        Console.WriteLine();
 
         var outputPath = Path.Combine(outputDir, "mcp-metadata.json");
         var json = JsonSerializer.Serialize(result, JsonOptions);
         File.WriteAllText(outputPath, json);
-        Console.WriteLine($"Metadata written to {outputPath}.");
+        
+        // Generate markdown report if requested
+        if (generateMarkdown)
+        {
+            var markdownPath = Path.Combine(outputDir, "mcp-metadata.md");
+            var markdown = GenerateMarkdownReport(result);
+            File.WriteAllText(markdownPath, markdown);
+        }
+        
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine("✅ Success!");
+        Console.ResetColor();
+        Console.WriteLine();
+        Console.WriteLine($"📊 Summary:");
+        Console.WriteLine($"   • Assemblies scanned: {assemblyPaths.Count}");
+        Console.WriteLine($"   • Assemblies with MCP metadata: {result.Assemblies.Count}");
+        Console.WriteLine($"   • Total classes discovered: {totalClasses}");
+        Console.WriteLine($"   • Total members discovered: {totalMembers}");
+        Console.WriteLine();
+        Console.WriteLine($"📄 Metadata written to:");
+        Console.WriteLine($"   {outputPath}");
+        if (generateMarkdown)
+        {
+            var markdownPath = Path.Combine(outputDir, "mcp-metadata.md");
+            Console.WriteLine($"   {markdownPath}");
+        }
+        Console.WriteLine();
+        
         return 0;
     }
 
@@ -126,7 +198,9 @@ internal static class McpDiscoveryApp
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"warning: failed to scan '{assemblyPath}': {ex.Message}");
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.WriteLine($"⚠️  ({ex.GetType().Name})");
+            Console.ResetColor();
             return null;
         }
         finally
@@ -292,10 +366,266 @@ internal static class McpDiscoveryApp
         return false;
     }
 
+    private static string GenerateMarkdownReport(McpDiscoveryResult result)
+    {
+        var sb = new System.Text.StringBuilder();
+        
+        // Header
+        sb.AppendLine("# MCP Discovery Report");
+        sb.AppendLine();
+        sb.AppendLine($"**Generated:** {result.GeneratedAtUtc:yyyy-MM-dd HH:mm:ss UTC}");
+        sb.AppendLine();
+        
+        // Summary
+        var totalClasses = result.Assemblies.Sum(a => a.Classes.Count);
+        var totalMembers = result.Assemblies.Sum(a => a.Classes.Sum(c => c.Members.Count));
+        var toolCount = result.Assemblies.Sum(a => a.Classes.Where(c => c.Kind == "ToolType").Sum(c => c.Members.Count));
+        var resourceCount = result.Assemblies.Sum(a => a.Classes.Where(c => c.Kind == "ResourceType").Sum(c => c.Members.Count));
+        var promptCount = result.Assemblies.Sum(a => a.Classes.Where(c => c.Kind == "PromptType").Sum(c => c.Members.Count));
+        
+        sb.AppendLine("## Summary");
+        sb.AppendLine();
+        sb.AppendLine($"- **Assemblies Scanned:** {result.Assemblies.Count}");
+        sb.AppendLine($"- **Total Classes:** {totalClasses}");
+        sb.AppendLine($"- **Total Capabilities:** {totalMembers}");
+        sb.AppendLine($"  - Tools: {toolCount}");
+        sb.AppendLine($"  - Resources: {resourceCount}");
+        sb.AppendLine($"  - Prompts: {promptCount}");
+        sb.AppendLine();
+        
+        // Group by capability kind
+        var toolTypes = result.Assemblies.SelectMany(a => a.Classes).Where(c => c.Kind == "ToolType").ToList();
+        var resourceTypes = result.Assemblies.SelectMany(a => a.Classes).Where(c => c.Kind == "ResourceType").ToList();
+        var promptTypes = result.Assemblies.SelectMany(a => a.Classes).Where(c => c.Kind == "PromptType").ToList();
+        
+        // Tools section
+        if (toolTypes.Any())
+        {
+            sb.AppendLine("## 🔧 Tools");
+            sb.AppendLine();
+            
+            foreach (var toolType in toolTypes)
+            {
+                sb.AppendLine($"### {toolType.TypeName}");
+                sb.AppendLine();
+                
+                if (!string.IsNullOrEmpty(toolType.Description))
+                {
+                    sb.AppendLine($"*{toolType.Description}*");
+                    sb.AppendLine();
+                }
+                
+                if (toolType.Audiences.Any())
+                {
+                    sb.AppendLine($"**Audiences:** {string.Join(", ", toolType.Audiences)}");
+                    sb.AppendLine();
+                }
+                
+                if (toolType.Members.Any())
+                {
+                    sb.AppendLine("| Name | Title | Description | Audiences |");
+                    sb.AppendLine("|------|-------|-------------|-----------|");
+                    
+                    foreach (var member in toolType.Members)
+                    {
+                        var name = EscapeMarkdown(member.Name ?? member.MethodName);
+                        var title = EscapeMarkdown(member.Title ?? "");
+                        var description = EscapeMarkdown(member.Description ?? "");
+                        var audiences = string.Join(", ", member.Audiences);
+                        
+                        sb.AppendLine($"| `{name}` | {title} | {description} | {audiences} |");
+                    }
+                    
+                    sb.AppendLine();
+                }
+            }
+        }
+        
+        // Resources section
+        if (resourceTypes.Any())
+        {
+            sb.AppendLine("## 📚 Resources");
+            sb.AppendLine();
+            
+            foreach (var resourceType in resourceTypes)
+            {
+                sb.AppendLine($"### {resourceType.TypeName}");
+                sb.AppendLine();
+                
+                if (!string.IsNullOrEmpty(resourceType.Description))
+                {
+                    sb.AppendLine($"*{resourceType.Description}*");
+                    sb.AppendLine();
+                }
+                
+                if (resourceType.Audiences.Any())
+                {
+                    sb.AppendLine($"**Audiences:** {string.Join(", ", resourceType.Audiences)}");
+                    sb.AppendLine();
+                }
+                
+                if (resourceType.Members.Any())
+                {
+                    sb.AppendLine("| Name | Title | Description | Audiences |");
+                    sb.AppendLine("|------|-------|-------------|-----------|");
+                    
+                    foreach (var member in resourceType.Members)
+                    {
+                        var name = EscapeMarkdown(member.Name ?? member.MethodName);
+                        var title = EscapeMarkdown(member.Title ?? "");
+                        var description = EscapeMarkdown(member.Description ?? "");
+                        var audiences = string.Join(", ", member.Audiences);
+                        
+                        sb.AppendLine($"| `{name}` | {title} | {description} | {audiences} |");
+                    }
+                    
+                    sb.AppendLine();
+                }
+            }
+        }
+        
+        // Prompts section
+        if (promptTypes.Any())
+        {
+            sb.AppendLine("## 💬 Prompts");
+            sb.AppendLine();
+            
+            foreach (var promptType in promptTypes)
+            {
+                sb.AppendLine($"### {promptType.TypeName}");
+                sb.AppendLine();
+                
+                if (!string.IsNullOrEmpty(promptType.Description))
+                {
+                    sb.AppendLine($"*{promptType.Description}*");
+                    sb.AppendLine();
+                }
+                
+                if (promptType.Audiences.Any())
+                {
+                    sb.AppendLine($"**Audiences:** {string.Join(", ", promptType.Audiences)}");
+                    sb.AppendLine();
+                }
+                
+                if (promptType.Members.Any())
+                {
+                    sb.AppendLine("| Name | Title | Description | Audiences |");
+                    sb.AppendLine("|------|-------|-------------|-----------|");
+                    
+                    foreach (var member in promptType.Members)
+                    {
+                        var name = EscapeMarkdown(member.Name ?? member.MethodName);
+                        var title = EscapeMarkdown(member.Title ?? "");
+                        var description = EscapeMarkdown(member.Description ?? "");
+                        var audiences = string.Join(", ", member.Audiences);
+                        
+                        sb.AppendLine($"| `{name}` | {title} | {description} | {audiences} |");
+                    }
+                    
+                    sb.AppendLine();
+                }
+            }
+        }
+        
+        // Assembly details
+        sb.AppendLine("## 📦 Assembly Details");
+        sb.AppendLine();
+        
+        foreach (var assembly in result.Assemblies)
+        {
+            sb.AppendLine($"### {Path.GetFileName(assembly.AssemblyPath)}");
+            sb.AppendLine();
+            sb.AppendLine($"**Path:** `{assembly.AssemblyPath}`");
+            sb.AppendLine();
+            sb.AppendLine($"**Classes:** {assembly.Classes.Count}");
+            sb.AppendLine();
+            
+            foreach (var classGroup in assembly.Classes.GroupBy(c => c.Kind))
+            {
+                sb.AppendLine($"- {classGroup.Key}: {classGroup.Count()} ({classGroup.Sum(c => c.Members.Count)} members)");
+            }
+            
+            sb.AppendLine();
+        }
+        
+        return sb.ToString();
+    }
+
+    private static string EscapeMarkdown(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return text;
+        
+        return text
+            .Replace("|", "\\|")
+            .Replace("\n", " ")
+            .Replace("\r", "");
+    }
+
+    private static void PrintBanner()
+    {
+        Console.ForegroundColor = ConsoleColor.Cyan;
+        Console.WriteLine(@"
+   _____ _____ _____     ____  _                             
+  |     |     |  _  |___|    \|_|___ ___ ___ _ _ ___ ___ _ _ 
+  | | | |   --|   __|___|  |  | |_ -|  _| . | | | -_|  _| | |
+  |_|_|_|_____|__|      |____/|_|___|___|___|\_/|___|_| |_  |
+                                                         |___|");
+        Console.ResetColor();
+        Console.ForegroundColor = ConsoleColor.DarkCyan;
+        Console.WriteLine("  Model Context Protocol Discovery Tool v1.0.0");
+        Console.ResetColor();
+        Console.WriteLine();
+    }
+
     private static void PrintUsage()
     {
-        Console.WriteLine("mcp-discover <input-directory> <output-directory>");
-        Console.WriteLine("Scans assemblies in the input directory for MCP metadata and emits JSON output.");
+        Console.WriteLine("Usage:");
+        Console.ForegroundColor = ConsoleColor.White;
+        Console.WriteLine("  mcp-discover <input-directory> <output-directory>");
+        Console.ResetColor();
+        Console.WriteLine();
+        Console.WriteLine("Description:");
+        Console.WriteLine("  Scans .NET assemblies for MCP (Model Context Protocol) metadata");
+        Console.WriteLine("  and generates a structured JSON file with discovered capabilities.");
+        Console.WriteLine();
+        Console.WriteLine("Arguments:");
+        Console.WriteLine("  <input-directory>   Directory containing .dll assemblies to scan");
+        Console.WriteLine("  <output-directory>  Directory where mcp-metadata.json will be written");
+        Console.WriteLine();
+        Console.WriteLine("Options:");
+        Console.WriteLine("  -h, --help         Show this help information");
+        Console.WriteLine("  -m, --markdown     Generate markdown report alongside JSON");
+        Console.WriteLine();
+        Console.WriteLine("Examples:");
+        Console.ForegroundColor = ConsoleColor.DarkGray;
+        Console.WriteLine("  # Scan build output");
+        Console.ForegroundColor = ConsoleColor.Yellow;
+        Console.WriteLine("  mcp-discover ./bin/Release/net10.0 ./metadata");
+        Console.ResetColor();
+        Console.WriteLine();
+        Console.ForegroundColor = ConsoleColor.DarkGray;
+        Console.WriteLine("  # Scan current directory");
+        Console.ForegroundColor = ConsoleColor.Yellow;
+        Console.WriteLine("  mcp-discover . ./output");
+        Console.ResetColor();
+        Console.WriteLine();
+        Console.ForegroundColor = ConsoleColor.DarkGray;
+        Console.WriteLine("  # Generate markdown report");
+        Console.ForegroundColor = ConsoleColor.Yellow;
+        Console.WriteLine("  mcp-discover ./bin/Release/net10.0 ./metadata --markdown");
+        Console.ResetColor();
+        Console.WriteLine();
+        Console.WriteLine("What it discovers:");
+        Console.WriteLine("  • Tools      - Methods decorated with [McpServerTool]");
+        Console.WriteLine("  • Resources  - Methods decorated with [McpServerResource]");
+        Console.WriteLine("  • Prompts    - Methods decorated with [McpServerPrompt]");
+        Console.WriteLine();
+        Console.WriteLine("For more information:");
+        Console.ForegroundColor = ConsoleColor.Cyan;
+        Console.WriteLine("  https://github.com/echapmanFromBunnings/mcp.discovery.tool");
+        Console.ResetColor();
+        Console.WriteLine();
     }
 
     private static IEnumerable<Type> GetLoadableTypes(Assembly assembly)

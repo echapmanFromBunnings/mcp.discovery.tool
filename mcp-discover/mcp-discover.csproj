@@ -7,22 +7,14 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <PackAsTool>true</PackAsTool>
-    <ToolCommandName>mcp-discover</ToolCommandName>
-    <PackageId>mcp-discover</PackageId>
-    <Version>1.0.0</Version>
+    <ToolCommandName>mcp-discover-dotnet</ToolCommandName>
+    <PackageId>mcp-discover-dotnet</PackageId>
+    <Version>0.0.2</Version>
     <Authors>echapmanFromBunnings</Authors>
-    <Description>A .NET command-line tool for discovering MCP (Model Context Protocol) capabilities in compiled assemblies through reflection. Scans assemblies for tools, resources, and prompts decorated with MCP attributes and generates structured JSON metadata.</Description>
-    <PackageReadmeFile>README.md</PackageReadmeFile>
-    <RepositoryUrl>https://github.com/echapmanFromBunnings/mcp.discovery.tool</RepositoryUrl>
-    <PackageTags>mcp;model-context-protocol;discovery;reflection;metadata;tools</PackageTags>
-    <PackageLicenseExpression>MIT</PackageLicenseExpression>
-  </PropertyGroup>
+    <Description>A tool to help identify what tools/prompts/resources an MCP server has within it.</Description>
 
-  <ItemGroup>
-    <None Include="README.md" Pack="true" PackagePath="\" />
-  </ItemGroup>
-
-</Project>
+    <Product>MCP.Discovery.Tool</Product>
+    <Copyright>Copyright © 2025 Eric Chapman</Copyright>
     <PackageTags>aspnetcore;tool;modelcontextprotocol</PackageTags>
     <RepositoryUrl>https://github.com/echapmanFromBunnings/mcp.discovery.tool</RepositoryUrl>
     <PackageProjectUrl>https://github.com/echapmanFromBunnings/mcp.discovery.tool</PackageProjectUrl>
@@ -34,5 +26,9 @@
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
 
 </Project>
