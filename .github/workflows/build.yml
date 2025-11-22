@@ -22,11 +22,11 @@ jobs:
         dotnet-version: '10.0.x'
     
     - name: Restore dependencies
-      run: dotnet restore mcp-discover/mcp-discover-dotnet.csproj
+      run: dotnet restore mcp-discover-dotnet/mcp-discover-dotnet.csproj
     
     - name: Build
-      run: dotnet build mcp-discover/mcp-discover-dotnet.csproj --no-restore --configuration Release
+      run: dotnet build mcp-discover-dotnet/mcp-discover-dotnet.csproj --no-restore --configuration Release
     
     - name: Test run
-      run: dotnet run --project mcp-discover/mcp-discover-dotnet.csproj --no-build --configuration Release
+      run: dotnet run --project mcp-discover-dotnet/mcp-discover-dotnet.csproj --no-build --configuration Release
       continue-on-error: true
