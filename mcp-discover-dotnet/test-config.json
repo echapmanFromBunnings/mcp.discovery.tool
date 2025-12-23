@@ -1,0 +1,32 @@
+{
+  "MinimumSeverity": null,
+  "ExcludeCategories": [],
+  "CustomPatterns": {
+    "SecretsPatterns": [
+      "api[_-]?key\\s*[:=]\\s*['\"]([^'\"]+)['\"]",
+      "password\\s*[:=]\\s*['\"]([^'\"]+)['\"]"
+    ],
+    "ValidationPatterns": [
+      "input",
+      "parameter",
+      "argument"
+    ],
+    "LoggingPatterns": [
+      "Log",
+      "logger",
+      "trace"
+    ]
+  },
+  "SeverityThresholds": {
+    "FailOnCritical": 0,
+    "FailOnHigh": 5,
+    "FailOnMedium": 10
+  },
+  "Suppressions": [
+    {
+      "Category": "GeneralSecurity",
+      "Pattern": "Test",
+      "Reason": "Test code is excluded from security scans"
+    }
+  ]
+}
