@@ -49,13 +49,21 @@ internal static class McpDiscoveryApp
             string.Equals(a, "-n", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(a, "--no-timestamp", StringComparison.OrdinalIgnoreCase));
 
+        var performSecurityScan = args.Any(a => 
+            string.Equals(a, "-s", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(a, "--security", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(a, "--security-scan", StringComparison.OrdinalIgnoreCase));
+
         var filteredArgs = args.Where(a => 
             !string.Equals(a, "-m", StringComparison.OrdinalIgnoreCase) &&
             !string.Equals(a, "--markdown", StringComparison.OrdinalIgnoreCase) &&
             !string.Equals(a, "-o", StringComparison.OrdinalIgnoreCase) &&
             !string.Equals(a, "--omit-path", StringComparison.OrdinalIgnoreCase) &&
             !string.Equals(a, "-n", StringComparison.OrdinalIgnoreCase) &&
-            !string.Equals(a, "--no-timestamp", StringComparison.OrdinalIgnoreCase)).ToArray();
+            !string.Equals(a, "--no-timestamp", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(a, "-s", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(a, "--security", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(a, "--security-scan", StringComparison.OrdinalIgnoreCase)).ToArray();
 
         if (filteredArgs.Length < 2)
         {
@@ -133,6 +141,31 @@ internal static class McpDiscoveryApp
 
         Console.WriteLine();
 
+        // Perform security analysis if requested
+        if (performSecurityScan)
+        {
+            Console.WriteLine("🔒 Running security vulnerability scan...");
+            Console.WriteLine();
+            result.SecurityAnalysis = SecurityAnalyzer.AnalyzeMetadata(result);
+            
+            var criticalCount = result.SecurityAnalysis.Findings.Count(f => f.Severity == SecuritySeverity.Critical);
+            var highCount = result.SecurityAnalysis.Findings.Count(f => f.Severity == SecuritySeverity.High);
+            var mediumCount = result.SecurityAnalysis.Findings.Count(f => f.Severity == SecuritySeverity.Medium);
+            var lowCount = result.SecurityAnalysis.Findings.Count(f => f.Severity == SecuritySeverity.Low);
+            
+            Console.ForegroundColor = criticalCount > 0 ? ConsoleColor.Red : ConsoleColor.Green;
+            Console.WriteLine($"   • Critical: {criticalCount}");
+            Console.ResetColor();
+            Console.ForegroundColor = highCount > 0 ? ConsoleColor.Yellow : ConsoleColor.Green;
+            Console.WriteLine($"   • High: {highCount}");
+            Console.ResetColor();
+            Console.ForegroundColor = mediumCount > 0 ? ConsoleColor.DarkYellow : ConsoleColor.Green;
+            Console.WriteLine($"   • Medium: {mediumCount}");
+            Console.ResetColor();
+            Console.WriteLine($"   • Low: {lowCount}");
+            Console.WriteLine();
+        }
+
         var outputPath = Path.Combine(outputDir, "mcp-metadata.json");
         var json = JsonSerializer.Serialize(result, JsonOptions);
         File.WriteAllText(outputPath, json);
@@ -141,7 +174,7 @@ internal static class McpDiscoveryApp
         if (generateMarkdown)
         {
             var markdownPath = Path.Combine(outputDir, "mcp-metadata.md");
-            var markdown = GenerateMarkdownReport(result);
+            var markdown = GenerateMarkdownReport(result, performSecurityScan);
             File.WriteAllText(markdownPath, markdown);
         }
         
@@ -388,7 +421,7 @@ internal static class McpDiscoveryApp
         return false;
     }
 
-    private static string GenerateMarkdownReport(McpDiscoveryResult result)
+    private static string GenerateMarkdownReport(McpDiscoveryResult result, bool includeSecurityAnalysis)
     {
         var sb = new System.Text.StringBuilder();
         
@@ -574,7 +607,100 @@ internal static class McpDiscoveryApp
             sb.AppendLine();
         }
         
+        // Security analysis section
+        if (includeSecurityAnalysis && result.SecurityAnalysis != null)
+        {
+            sb.AppendLine("## 🔒 Security Analysis");
+            sb.AppendLine();
+            
+            var analysis = result.SecurityAnalysis;
+            
+            sb.AppendLine("### Summary");
+            sb.AppendLine();
+            sb.AppendLine($"- **Total Findings:** {analysis.TotalFindings}");
+            sb.AppendLine($"- **Critical:** {analysis.CriticalCount}");
+            sb.AppendLine($"- **High:** {analysis.HighCount}");
+            sb.AppendLine($"- **Medium:** {analysis.MediumCount}");
+            sb.AppendLine($"- **Low:** {analysis.LowCount}");
+            sb.AppendLine();
+            
+            if (analysis.Findings.Any())
+            {
+                // Group by severity
+                var criticalFindings = analysis.Findings.Where(f => f.Severity == SecuritySeverity.Critical).ToList();
+                var highFindings = analysis.Findings.Where(f => f.Severity == SecuritySeverity.High).ToList();
+                var mediumFindings = analysis.Findings.Where(f => f.Severity == SecuritySeverity.Medium).ToList();
+                var lowFindings = analysis.Findings.Where(f => f.Severity == SecuritySeverity.Low).ToList();
+                
+                if (criticalFindings.Any())
+                {
+                    sb.AppendLine("### 🚨 Critical Severity");
+                    sb.AppendLine();
+                    AppendSecurityFindings(sb, criticalFindings);
+                }
+                
+                if (highFindings.Any())
+                {
+                    sb.AppendLine("### ⚠️ High Severity");
+                    sb.AppendLine();
+                    AppendSecurityFindings(sb, highFindings);
+                }
+                
+                if (mediumFindings.Any())
+                {
+                    sb.AppendLine("### ⚡ Medium Severity");
+                    sb.AppendLine();
+                    AppendSecurityFindings(sb, mediumFindings);
+                }
+                
+                if (lowFindings.Any())
+                {
+                    sb.AppendLine("### ℹ️ Low Severity");
+                    sb.AppendLine();
+                    AppendSecurityFindings(sb, lowFindings);
+                }
+            }
+            else
+            {
+                sb.AppendLine("✅ No security vulnerabilities detected.");
+                sb.AppendLine();
+            }
+        }
+        
         return sb.ToString();
+    }
+
+    private static void AppendSecurityFindings(System.Text.StringBuilder sb, List<SecurityFinding> findings)
+    {
+        foreach (var finding in findings)
+        {
+            var categoryIcon = finding.Category switch
+            {
+                VulnerabilityCategory.PromptInjection => "💉",
+                VulnerabilityCategory.ToolPoisoning => "☠️",
+                VulnerabilityCategory.ToxicFlow => "⚡",
+                VulnerabilityCategory.GeneralSecurity => "🛡️",
+                _ => "⚠️"
+            };
+            
+            sb.AppendLine($"#### {categoryIcon} {finding.Title}");
+            sb.AppendLine();
+            sb.AppendLine($"**Location:** `{finding.Location}`");
+            sb.AppendLine();
+            sb.AppendLine($"**Description:** {finding.Description}");
+            sb.AppendLine();
+            sb.AppendLine($"**Recommendation:** {finding.Recommendation}");
+            sb.AppendLine();
+            
+            if (!string.IsNullOrEmpty(finding.Evidence))
+            {
+                sb.AppendLine($"**Evidence:** {finding.Evidence}");
+                sb.AppendLine();
+            }
+            
+            sb.AppendLine("---");
+            sb.AppendLine();
+        }
     }
 
     private static string EscapeMarkdown(string text)
@@ -641,7 +767,9 @@ internal static class McpDiscoveryApp
         Console.WriteLine("  -m, --markdown     Generate markdown report alongside JSON");
         Console.WriteLine("  -o, --omit-path    Omit base path from assembly paths in output");
         Console.WriteLine("  -n, --no-timestamp Omit timestamp from output (for version control)");
+        Console.WriteLine("  -s, --security     Perform security vulnerability analysis");
         Console.WriteLine();
+
         Console.WriteLine("Examples:");
         Console.ForegroundColor = ConsoleColor.DarkGray;
         Console.WriteLine("  # Scan build output");
@@ -713,6 +841,7 @@ internal sealed class McpDiscoveryResult
 {
     public DateTimeOffset? GeneratedAtUtc { get; set; }
     public List<McpAssemblyMetadata> Assemblies { get; set; } = new();
+    public SecurityAnalysisResult? SecurityAnalysis { get; set; }
 }
 
 internal sealed class McpAssemblyMetadata
@@ -738,4 +867,340 @@ internal sealed class McpMemberMetadata
     public string? Title { get; set; }
     public string? Description { get; set; }
     public IReadOnlyList<string> Audiences { get; set; } = Array.Empty<string>();
+}
+
+internal enum SecuritySeverity
+{
+    Low,
+    Medium,
+    High,
+    Critical
+}
+
+internal enum VulnerabilityCategory
+{
+    PromptInjection,
+    ToolPoisoning,
+    ToxicFlow,
+    GeneralSecurity
+}
+
+internal sealed class SecurityFinding
+{
+    public VulnerabilityCategory Category { get; set; }
+    public SecuritySeverity Severity { get; set; }
+    public string Title { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+    public string Location { get; set; } = string.Empty;
+    public string Recommendation { get; set; } = string.Empty;
+    public string? Evidence { get; set; }
+}
+
+internal sealed class SecurityAnalysisResult
+{
+    public int TotalFindings { get; set; }
+    public int CriticalCount { get; set; }
+    public int HighCount { get; set; }
+    public int MediumCount { get; set; }
+    public int LowCount { get; set; }
+    public List<SecurityFinding> Findings { get; set; } = new();
+}
+
+internal static class SecurityAnalyzer
+{
+    private static readonly string[] DangerousMethodPatterns = 
+    {
+        "Execute", "Exec", "Run", "Invoke", "Call", "System", "Command", "Shell",
+        "Delete", "Remove", "Drop", "Truncate", "Destroy", "Kill", "Terminate"
+    };
+
+    private static readonly string[] FileSystemPatterns = 
+    {
+        "File", "Directory", "Path", "Read", "Write", "Create", "Open", "Save", "Load"
+    };
+
+    private static readonly string[] DatabasePatterns = 
+    {
+        "Query", "Sql", "Database", "Db", "Execute", "Insert", "Update", "Delete", "Select"
+    };
+
+    private static readonly string[] UnsafeInputIndicators = 
+    {
+        "string", "object", "dynamic", "unvalidated", "raw", "user", "input"
+    };
+
+    public static SecurityAnalysisResult AnalyzeMetadata(McpDiscoveryResult result)
+    {
+        var findings = new List<SecurityFinding>();
+
+        foreach (var assembly in result.Assemblies)
+        {
+            foreach (var classMetadata in assembly.Classes)
+            {
+                // Analyze each member for vulnerabilities
+                foreach (var member in classMetadata.Members)
+                {
+                    AnalyzePromptInjection(member, classMetadata, assembly, findings);
+                    AnalyzeToolPoisoning(member, classMetadata, assembly, findings);
+                    AnalyzeToxicFlow(member, classMetadata, assembly, findings);
+                    AnalyzeGeneralSecurity(member, classMetadata, assembly, findings);
+                }
+
+                // Analyze class-level issues
+                AnalyzeClassSecurity(classMetadata, assembly, findings);
+            }
+        }
+
+        return new SecurityAnalysisResult
+        {
+            Findings = findings,
+            TotalFindings = findings.Count,
+            CriticalCount = findings.Count(f => f.Severity == SecuritySeverity.Critical),
+            HighCount = findings.Count(f => f.Severity == SecuritySeverity.High),
+            MediumCount = findings.Count(f => f.Severity == SecuritySeverity.Medium),
+            LowCount = findings.Count(f => f.Severity == SecuritySeverity.Low)
+        };
+    }
+
+    private static void AnalyzePromptInjection(McpMemberMetadata member, McpClassMetadata classMetadata, 
+        McpAssemblyMetadata assembly, List<SecurityFinding> findings)
+    {
+        if (member.Kind != "Prompt")
+            return;
+
+        // Check for dynamic content indicators in description
+        var description = member.Description ?? "";
+        var title = member.Title ?? "";
+        var name = member.Name ?? "";
+
+        var hasUserInput = description.Contains("user", StringComparison.OrdinalIgnoreCase) ||
+                          description.Contains("input", StringComparison.OrdinalIgnoreCase) ||
+                          description.Contains("parameter", StringComparison.OrdinalIgnoreCase);
+
+        var hasConcatenation = description.Contains("concat", StringComparison.OrdinalIgnoreCase) ||
+                              description.Contains("+", StringComparison.OrdinalIgnoreCase) ||
+                              description.Contains("format", StringComparison.OrdinalIgnoreCase);
+
+        if (hasUserInput && hasConcatenation)
+        {
+            findings.Add(new SecurityFinding
+            {
+                Category = VulnerabilityCategory.PromptInjection,
+                Severity = SecuritySeverity.High,
+                Title = "Potential Prompt Injection Risk",
+                Description = "Prompt appears to accept user input and may concatenate it directly without sanitization.",
+                Location = $"{classMetadata.TypeName}.{member.MethodName}",
+                Recommendation = "Implement input sanitization and validation. Use templating with proper escaping. Consider using allowlists for expected input patterns.",
+                Evidence = $"Description contains user input indicators: '{description}'"
+            });
+        }
+
+        // Check for missing input validation
+        if (string.IsNullOrEmpty(description) && member.Kind == "Prompt")
+        {
+            findings.Add(new SecurityFinding
+            {
+                Category = VulnerabilityCategory.PromptInjection,
+                Severity = SecuritySeverity.Medium,
+                Title = "Missing Prompt Documentation",
+                Description = "Prompt lacks description which may indicate missing input validation considerations.",
+                Location = $"{classMetadata.TypeName}.{member.MethodName}",
+                Recommendation = "Document the prompt's expected inputs and validate them appropriately.",
+                Evidence = "No description provided"
+            });
+        }
+    }
+
+    private static void AnalyzeToolPoisoning(McpMemberMetadata member, McpClassMetadata classMetadata,
+        McpAssemblyMetadata assembly, List<SecurityFinding> findings)
+    {
+        if (member.Kind != "Tool")
+            return;
+
+        var methodName = member.MethodName.ToLowerInvariant();
+        var description = (member.Description ?? "").ToLowerInvariant();
+        var name = (member.Name ?? "").ToLowerInvariant();
+
+        // Check for dangerous operations
+        foreach (var pattern in DangerousMethodPatterns)
+        {
+            if (methodName.Contains(pattern.ToLowerInvariant()) || 
+                description.Contains(pattern.ToLowerInvariant()) ||
+                name.Contains(pattern.ToLowerInvariant()))
+            {
+                findings.Add(new SecurityFinding
+                {
+                    Category = VulnerabilityCategory.ToolPoisoning,
+                    Severity = SecuritySeverity.Critical,
+                    Title = "Potentially Dangerous Tool Operation",
+                    Description = $"Tool contains dangerous operation pattern: '{pattern}'",
+                    Location = $"{classMetadata.TypeName}.{member.MethodName}",
+                    Recommendation = "Ensure strict input validation, implement allowlists, add authorization checks, and audit all usage.",
+                    Evidence = $"Pattern '{pattern}' detected in tool name/description"
+                });
+                break;
+            }
+        }
+
+        // Check for file system operations
+        foreach (var pattern in FileSystemPatterns)
+        {
+            if (methodName.Contains(pattern.ToLowerInvariant()) || 
+                description.Contains(pattern.ToLowerInvariant()))
+            {
+                findings.Add(new SecurityFinding
+                {
+                    Category = VulnerabilityCategory.ToolPoisoning,
+                    Severity = SecuritySeverity.High,
+                    Title = "File System Access Detected",
+                    Description = $"Tool performs file system operations which could be exploited for path traversal attacks.",
+                    Location = $"{classMetadata.TypeName}.{member.MethodName}",
+                    Recommendation = "Validate all file paths against an allowlist. Use Path.GetFullPath() and ensure paths are within expected directories. Implement strict path sanitization.",
+                    Evidence = $"File system pattern '{pattern}' detected"
+                });
+                break;
+            }
+        }
+
+        // Check for database operations
+        foreach (var pattern in DatabasePatterns)
+        {
+            if (methodName.Contains(pattern.ToLowerInvariant()) || 
+                description.Contains(pattern.ToLowerInvariant()))
+            {
+                findings.Add(new SecurityFinding
+                {
+                    Category = VulnerabilityCategory.ToolPoisoning,
+                    Severity = SecuritySeverity.High,
+                    Title = "Database Operation Detected",
+                    Description = "Tool performs database operations which could be vulnerable to SQL injection.",
+                    Location = $"{classMetadata.TypeName}.{member.MethodName}",
+                    Recommendation = "Always use parameterized queries or an ORM. Never concatenate user input into SQL statements. Implement least-privilege database access.",
+                    Evidence = $"Database pattern '{pattern}' detected"
+                });
+                break;
+            }
+        }
+    }
+
+    private static void AnalyzeToxicFlow(McpMemberMetadata member, McpClassMetadata classMetadata,
+        McpAssemblyMetadata assembly, List<SecurityFinding> findings)
+    {
+        // Check for async operations without timeout hints
+        if (member.MethodName.Contains("Async", StringComparison.OrdinalIgnoreCase) ||
+            member.Description?.Contains("async", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            var hasTimeoutMention = member.Description?.Contains("timeout", StringComparison.OrdinalIgnoreCase) == true ||
+                                   member.Description?.Contains("delay", StringComparison.OrdinalIgnoreCase) == true;
+
+            if (!hasTimeoutMention)
+            {
+                findings.Add(new SecurityFinding
+                {
+                    Category = VulnerabilityCategory.ToxicFlow,
+                    Severity = SecuritySeverity.Medium,
+                    Title = "Async Operation Without Timeout",
+                    Description = "Async operation detected without timeout configuration which could lead to resource exhaustion.",
+                    Location = $"{classMetadata.TypeName}.{member.MethodName}",
+                    Recommendation = "Implement cancellation tokens and timeout limits. Consider using Task.WaitAsync() with timeout. Document expected execution time.",
+                    Evidence = "Async operation without timeout documentation"
+                });
+            }
+        }
+
+        // Check for expensive operations without rate limiting hints
+        var expensivePatterns = new[] { "process", "generate", "compute", "calculate", "analyze", "fetch", "download" };
+        var methodNameLower = member.MethodName.ToLowerInvariant();
+        var descriptionLower = (member.Description ?? "").ToLowerInvariant();
+
+        foreach (var pattern in expensivePatterns)
+        {
+            if (methodNameLower.Contains(pattern) || descriptionLower.Contains(pattern))
+            {
+                var hasRateLimitMention = descriptionLower.Contains("rate") ||
+                                         descriptionLower.Contains("limit") ||
+                                         descriptionLower.Contains("throttle");
+
+                if (!hasRateLimitMention && member.Kind == "Tool")
+                {
+                    findings.Add(new SecurityFinding
+                    {
+                        Category = VulnerabilityCategory.ToxicFlow,
+                        Severity = SecuritySeverity.Medium,
+                        Title = "Potentially Expensive Operation",
+                        Description = $"Tool performs potentially expensive operation '{pattern}' without rate limiting.",
+                        Location = $"{classMetadata.TypeName}.{member.MethodName}",
+                        Recommendation = "Implement rate limiting, request throttling, or queue-based processing. Set maximum execution time limits.",
+                        Evidence = $"Expensive operation pattern '{pattern}' detected without rate limiting"
+                    });
+                    break;
+                }
+            }
+        }
+    }
+
+    private static void AnalyzeGeneralSecurity(McpMemberMetadata member, McpClassMetadata classMetadata,
+        McpAssemblyMetadata assembly, List<SecurityFinding> findings)
+    {
+        // Check for missing audience restrictions on sensitive operations
+        if ((member.Audiences == null || member.Audiences.Count == 0) && member.Kind == "Tool")
+        {
+            var methodNameLower = member.MethodName.ToLowerInvariant();
+            var isSensitive = DangerousMethodPatterns.Any(p => methodNameLower.Contains(p.ToLowerInvariant())) ||
+                            FileSystemPatterns.Any(p => methodNameLower.Contains(p.ToLowerInvariant())) ||
+                            DatabasePatterns.Any(p => methodNameLower.Contains(p.ToLowerInvariant()));
+
+            if (isSensitive)
+            {
+                findings.Add(new SecurityFinding
+                {
+                    Category = VulnerabilityCategory.GeneralSecurity,
+                    Severity = SecuritySeverity.High,
+                    Title = "Missing Authorization Controls",
+                    Description = "Sensitive tool operation lacks audience restrictions for access control.",
+                    Location = $"{classMetadata.TypeName}.{member.MethodName}",
+                    Recommendation = "Define appropriate audiences using [McpAudience] attribute to restrict access. Implement role-based access control.",
+                    Evidence = "No audience restrictions defined on sensitive operation"
+                });
+            }
+        }
+
+        // Check for external API calls
+        if (member.Description?.Contains("api", StringComparison.OrdinalIgnoreCase) == true ||
+            member.Description?.Contains("http", StringComparison.OrdinalIgnoreCase) == true ||
+            member.Description?.Contains("url", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            findings.Add(new SecurityFinding
+            {
+                Category = VulnerabilityCategory.GeneralSecurity,
+                Severity = SecuritySeverity.Medium,
+                Title = "External API Call Detected",
+                Description = "Tool makes external API calls which could be vulnerable to SSRF attacks.",
+                Location = $"{classMetadata.TypeName}.{member.MethodName}",
+                Recommendation = "Validate all URLs against an allowlist. Use HTTPS only. Implement request signing. Avoid accepting arbitrary URLs from user input.",
+                Evidence = "External API/URL pattern detected in description"
+            });
+        }
+    }
+
+    private static void AnalyzeClassSecurity(McpClassMetadata classMetadata, McpAssemblyMetadata assembly,
+        List<SecurityFinding> findings)
+    {
+        // Check for classes with many tools but no audience restrictions
+        if (classMetadata.Kind == "ToolType" && 
+            (classMetadata.Audiences == null || classMetadata.Audiences.Count == 0) &&
+            classMetadata.Members.Count > 3)
+        {
+            findings.Add(new SecurityFinding
+            {
+                Category = VulnerabilityCategory.GeneralSecurity,
+                Severity = SecuritySeverity.Medium,
+                Title = "Tool Class Without Access Control",
+                Description = $"Tool class contains {classMetadata.Members.Count} tools but lacks audience-based access control.",
+                Location = classMetadata.TypeName,
+                Recommendation = "Add [McpAudience] attribute to the class to define who can access these tools.",
+                Evidence = $"Class has {classMetadata.Members.Count} tools with no audience restrictions"
+            });
+        }
+    }
 }

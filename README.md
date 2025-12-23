@@ -88,9 +88,11 @@ Arguments:
   output-directory  Directory where mcp-metadata.json will be written
 
 Options:
-  -h, --help       Show help information
-  -m, --markdown   Generate markdown report alongside JSON
-  -o, --omit-path  Omit base path from assembly paths in output
+  -h, --help         Show help information
+  -m, --markdown     Generate markdown report alongside JSON
+  -o, --omit-path    Omit base path from assembly paths in output
+  -n, --no-timestamp Omit timestamp from output (for version control)
+  -s, --security     Perform security vulnerability analysis
 ```
 
 ### Example
@@ -102,15 +104,81 @@ mcp-discover-dotnet ./bin/Release/net10.0 ./metadata
 # Generate both JSON and markdown reports
 mcp-discover-dotnet ./bin/Release/net10.0 ./metadata --markdown
 
+# Perform security vulnerability scan
+mcp-discover-dotnet ./bin/Release/net10.0 ./metadata --security
+
+# Combine options for comprehensive analysis
+mcp-discover-dotnet ./bin/Release/net10.0 ./metadata --markdown --security
+
 # Use relative paths in output instead of full paths
 mcp-discover-dotnet ./bin/Release/net10.0 ./metadata --omit-path
-
-# Combine options
-mcp-discover-dotnet ./bin/Release/net10.0 ./metadata --markdown --omit-path
 
 # Output: ./metadata/mcp-metadata.json
 #         ./metadata/mcp-metadata.md (if --markdown used)
 ```
+
+## Security Vulnerability Detection
+
+The tool can analyze MCP servers for common security vulnerabilities using the `--security` flag:
+
+### Vulnerability Categories
+
+1. **Prompt Injection Attacks** 💉
+   - Detects prompts that may accept unsanitized user input
+   - Identifies string concatenation patterns in prompt descriptions
+   - Flags missing input validation
+
+2. **Tool Poisoning Attacks** ☠️
+   - Identifies dangerous operations (file system, command execution, database access)
+   - Detects file system operations vulnerable to path traversal
+   - Flags database operations that may be vulnerable to SQL injection
+   - Warns about external API calls susceptible to SSRF
+
+3. **Toxic Flow Issues** ⚡
+   - Detects async operations without timeout configuration
+   - Identifies expensive operations without rate limiting
+   - Flags resource exhaustion risks
+
+4. **General Security Issues** 🛡️
+   - Identifies missing authorization controls on sensitive operations
+   - Detects lack of audience restrictions
+   - Flags tools accessing external resources without validation
+
+### Severity Levels
+
+- **Critical**: Immediate security risk requiring urgent attention
+- **High**: Significant security concern that should be addressed soon
+- **Medium**: Potential security issue worth reviewing
+- **Low**: Minor security consideration or best practice improvement
+
+### Security Scan Output
+
+When `--security` is used, the JSON output includes a `SecurityAnalysis` section:
+
+```json
+{
+  "SecurityAnalysis": {
+    "TotalFindings": 5,
+    "CriticalCount": 1,
+    "HighCount": 2,
+    "MediumCount": 2,
+    "LowCount": 0,
+    "Findings": [
+      {
+        "Category": "ToolPoisoning",
+        "Severity": "Critical",
+        "Title": "Potentially Dangerous Tool Operation",
+        "Description": "Tool contains dangerous operation pattern",
+        "Location": "MyTools.ExecuteCommand",
+        "Recommendation": "Implement strict input validation and authorization",
+        "Evidence": "Pattern 'Execute' detected"
+      }
+    ]
+  }
+}
+```
+
+With `--markdown --security`, the report includes a detailed security section with findings grouped by severity.
 
 ## Quick Start with Test Server
 
