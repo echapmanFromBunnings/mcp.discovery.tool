@@ -686,4 +686,3 @@ echapmanFromBunnings
 ---
 
 **Need Help?** Check the test server in `mcp-discover.tests/` for a complete working example!
-

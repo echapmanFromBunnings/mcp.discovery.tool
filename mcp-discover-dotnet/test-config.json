@@ -28,5 +28,21 @@
       "Pattern": "Test",
       "Reason": "Test code is excluded from security scans"
     }
-  ]
+  ],
+  "CategoryIgnorePaths": {
+    "PromptInjection": [
+      "*\\Tests\\*",
+      "*\\TestProject\\*"
+    ],
+    "ToolPoisoning": [
+      "*\\bin\\Debug\\*test*.dll"
+    ],
+    "GeneralSecurity": [
+      "**\\*.Tests.dll",
+      "*\\Mock*.dll"
+    ],
+    "ToxicFlow": [
+      "*\\Samples\\*"
+    ]
+  }
 }

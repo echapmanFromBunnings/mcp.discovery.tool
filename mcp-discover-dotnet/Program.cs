@@ -64,6 +64,16 @@ internal static class McpDiscoveryApp
             string.Equals(a, "-v", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(a, "--verbose", StringComparison.OrdinalIgnoreCase));
 
+        var configPath = GetArgValue(args, "--config");
+        var exportFormat = GetArgValue(args, "--format") ?? "json";
+        var minSeverity = GetArgValue(args, "--min-severity");
+        var excludeCategories = GetArgValue(args, "--exclude-categories");
+        var failOnCritical = GetArgValue(args, "--fail-on-critical");
+        var failOnHigh = GetArgValue(args, "--fail-on-high");
+        var verbose = args.Any(a => 
+            string.Equals(a, "-v", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(a, "--verbose", StringComparison.OrdinalIgnoreCase));
+
         var filteredArgs = args.Where(a => 
             !string.Equals(a, "-m", StringComparison.OrdinalIgnoreCase) &&
             !string.Equals(a, "--markdown", StringComparison.OrdinalIgnoreCase) &&
@@ -73,6 +83,15 @@ internal static class McpDiscoveryApp
             !string.Equals(a, "--no-timestamp", StringComparison.OrdinalIgnoreCase) &&
             !string.Equals(a, "-s", StringComparison.OrdinalIgnoreCase) &&
             !string.Equals(a, "--security", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(a, "--security-scan", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(a, "-v", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(a, "--verbose", StringComparison.OrdinalIgnoreCase) &&
+            !a.StartsWith("--config", StringComparison.OrdinalIgnoreCase) &&
+            !a.StartsWith("--format", StringComparison.OrdinalIgnoreCase) &&
+            !a.StartsWith("--min-severity", StringComparison.OrdinalIgnoreCase) &&
+            !a.StartsWith("--exclude-categories", StringComparison.OrdinalIgnoreCase) &&
+            !a.StartsWith("--fail-on-critical", StringComparison.OrdinalIgnoreCase) &&
+            !a.StartsWith("--fail-on-high", StringComparison.OrdinalIgnoreCase)).ToArray();
             !string.Equals(a, "--security-scan", StringComparison.OrdinalIgnoreCase) &&
             !string.Equals(a, "-v", StringComparison.OrdinalIgnoreCase) &&
             !string.Equals(a, "--verbose", StringComparison.OrdinalIgnoreCase) &&
@@ -94,6 +113,29 @@ internal static class McpDiscoveryApp
         }
 
         PrintBanner();
+
+        // Load security scan configuration if provided
+        SecurityScanConfig? config = null;
+        if (!string.IsNullOrEmpty(configPath))
+        {
+            try
+            {
+                var configJson = File.ReadAllText(configPath);
+                config = JsonSerializer.Deserialize<SecurityScanConfig>(configJson, JsonOptions);
+                if (verbose)
+                {
+                    Console.WriteLine($"✅ Loaded configuration from: {configPath}");
+                    Console.WriteLine();
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine($"❌ Error loading configuration file: {ex.Message}");
+                Console.ResetColor();
+                return 1;
+            }
+        }
 
         // Load security scan configuration if provided
         SecurityScanConfig? config = null;
@@ -196,8 +238,75 @@ internal static class McpDiscoveryApp
                 Console.WriteLine();
             }
             
+        {
+            if (verbose)
+            {
+                Console.WriteLine("🔒 Running enhanced security vulnerability scan...");
+                Console.WriteLine();
+            }
+            else
+            {
+                Console.WriteLine("🔒 Running security vulnerability scan...");
+                Console.WriteLine();
+            }
+            
             result.SecurityAnalysis = SecurityAnalyzer.AnalyzeMetadata(result);
             
+            // Run enhanced security analysis
+            if (config != null || verbose)
+            {
+                var secretFindings = EnhancedSecurityAnalyzer.AnalyzeSecrets(result);
+                result.SecurityAnalysis.Findings.AddRange(secretFindings);
+                
+                var loggingFindings = EnhancedSecurityAnalyzer.AnalyzeAuditLogging(result);
+                result.SecurityAnalysis.Findings.AddRange(loggingFindings);
+            }
+            
+            // Add CWE mapping and remediation guidance to all findings
+            foreach (var finding in result.SecurityAnalysis.Findings)
+            {
+                finding.CWE = EnhancedSecurityAnalyzer.GetCWEMapping(finding.Category);
+                var guidance = EnhancedSecurityAnalyzer.GetRemediationGuidance(finding.Category);
+                finding.CodeExample = guidance.CodeExample;
+                finding.DocumentationLink = guidance.DocumentationLink;
+                if (string.IsNullOrEmpty(finding.Recommendation))
+                {
+                    finding.Recommendation = guidance.Description;
+                }
+            }
+            
+            // Apply filters if configured
+            if (config != null)
+            {
+                result.SecurityAnalysis.Findings = EnhancedSecurityAnalyzer.ApplyFilters(
+                    result.SecurityAnalysis.Findings, 
+                    config);
+                result.SecurityAnalysis.Findings = EnhancedSecurityAnalyzer.ApplySuppressions(
+                    result.SecurityAnalysis.Findings, 
+                    config.Suppressions ?? new List<Suppression>());
+            }
+            
+            // Apply command-line filters
+            if (!string.IsNullOrEmpty(minSeverity))
+            {
+                var minLevel = Enum.Parse<SecuritySeverity>(minSeverity, true);
+                result.SecurityAnalysis.Findings = result.SecurityAnalysis.Findings
+                    .Where(f => f.Severity >= minLevel)
+                    .ToList();
+            }
+            
+            if (!string.IsNullOrEmpty(excludeCategories))
+            {
+                var excludedCats = excludeCategories.Split(',')
+                    .Select(c => Enum.Parse<VulnerabilityCategory>(c.Trim(), true))
+                    .ToList();
+                result.SecurityAnalysis.Findings = result.SecurityAnalysis.Findings
+                    .Where(f => !excludedCats.Contains(f.Category))
+                    .ToList();
+            }
+            
+            // Update summary counts
+            result.SecurityAnalysis.TotalFindings = result.SecurityAnalysis.Findings.Count;
             // Run enhanced security analysis
             if (config != null || verbose)
             {
@@ -257,6 +366,11 @@ internal static class McpDiscoveryApp
             var highCount = result.SecurityAnalysis.Findings.Count(f => f.Severity == SecuritySeverity.High);
             var mediumCount = result.SecurityAnalysis.Findings.Count(f => f.Severity == SecuritySeverity.Medium);
             var lowCount = result.SecurityAnalysis.Findings.Count(f => f.Severity == SecuritySeverity.Low);
+            
+            result.SecurityAnalysis.CriticalCount = criticalCount;
+            result.SecurityAnalysis.HighCount = highCount;
+            result.SecurityAnalysis.MediumCount = mediumCount;
+            result.SecurityAnalysis.LowCount = lowCount;
             
             result.SecurityAnalysis.CriticalCount = criticalCount;
             result.SecurityAnalysis.HighCount = highCount;
@@ -336,6 +450,68 @@ internal static class McpDiscoveryApp
                 exportedFiles.Add(csvPath);
             }
         }
+            
+            // Verbose output
+            if (verbose && result.SecurityAnalysis.Findings.Any())
+            {
+                Console.WriteLine("📋 Detailed Findings:");
+                Console.WriteLine();
+                foreach (var finding in result.SecurityAnalysis.Findings)
+                {
+                    var severityColor = finding.Severity switch
+                    {
+                        SecuritySeverity.Critical => ConsoleColor.Red,
+                        SecuritySeverity.High => ConsoleColor.Yellow,
+                        SecuritySeverity.Medium => ConsoleColor.DarkYellow,
+                        _ => ConsoleColor.Gray
+                    };
+                    Console.ForegroundColor = severityColor;
+                    Console.WriteLine($"   [{finding.Severity}] {finding.Title}");
+                    Console.ResetColor();
+                    Console.WriteLine($"      Location: {finding.Location}");
+                    Console.WriteLine($"      Category: {finding.Category}");
+                    if (!string.IsNullOrEmpty(finding.CWE))
+                    {
+                        Console.WriteLine($"      CWE: {finding.CWE}");
+                    }
+                    Console.WriteLine($"      Description: {finding.Description}");
+                    Console.WriteLine();
+                }
+            }
+        }
+
+        // Export in requested format(s)
+        var exportedFiles = new List<string>();
+        
+        if (exportFormat.Equals("json", StringComparison.OrdinalIgnoreCase) || 
+            exportFormat.Equals("all", StringComparison.OrdinalIgnoreCase))
+        {
+            var outputPath = Path.Combine(outputDir, "mcp-metadata.json");
+            var json = JsonSerializer.Serialize(result, JsonOptions);
+            File.WriteAllText(outputPath, json);
+            exportedFiles.Add(outputPath);
+        }
+        
+        if (performSecurityScan && result.SecurityAnalysis != null)
+        {
+            if (exportFormat.Equals("sarif", StringComparison.OrdinalIgnoreCase) || 
+                exportFormat.Equals("all", StringComparison.OrdinalIgnoreCase))
+            {
+                var sarifPath = Path.Combine(outputDir, "security-report.sarif");
+                var sarif = SarifExporter.GenerateSarif(result);
+                File.WriteAllText(sarifPath, sarif);
+                exportedFiles.Add(sarifPath);
+            }
+            
+            if (exportFormat.Equals("csv", StringComparison.OrdinalIgnoreCase) || 
+                exportFormat.Equals("all", StringComparison.OrdinalIgnoreCase))
+            {
+                var csvPath = Path.Combine(outputDir, "security-report.csv");
+                var csv = CsvExporter.GenerateCsv(result);
+                File.WriteAllText(csvPath, csv);
+                exportedFiles.Add(csvPath);
+            }
+        }
         
         // Generate markdown report if requested
         if (generateMarkdown)
@@ -343,6 +519,7 @@ internal static class McpDiscoveryApp
             var markdownPath = Path.Combine(outputDir, "mcp-metadata.md");
             var markdown = GenerateMarkdownReport(result, performSecurityScan);
             File.WriteAllText(markdownPath, markdown);
+            exportedFiles.Add(markdownPath);
             exportedFiles.Add(markdownPath);
         }
         
@@ -358,10 +535,40 @@ internal static class McpDiscoveryApp
         Console.WriteLine();
         Console.WriteLine($"📄 Files written:");
         foreach (var file in exportedFiles)
+        Console.WriteLine($"📄 Files written:");
+        foreach (var file in exportedFiles)
         {
+            Console.WriteLine($"   {file}");
             Console.WriteLine($"   {file}");
         }
         Console.WriteLine();
+        
+        // CI/CD integration: fail build if critical or high severity thresholds exceeded
+        if (performSecurityScan && result.SecurityAnalysis != null)
+        {
+            var criticalThreshold = !string.IsNullOrEmpty(failOnCritical) 
+                ? int.Parse(failOnCritical) 
+                : config?.Thresholds?.CriticalThreshold ?? int.MaxValue;
+            var highThreshold = !string.IsNullOrEmpty(failOnHigh) 
+                ? int.Parse(failOnHigh) 
+                : config?.Thresholds?.HighThreshold ?? int.MaxValue;
+            
+            if (result.SecurityAnalysis.CriticalCount > criticalThreshold)
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine($"❌ Build failed: {result.SecurityAnalysis.CriticalCount} critical vulnerabilities exceed threshold of {criticalThreshold}");
+                Console.ResetColor();
+                return 1;
+            }
+            
+            if (result.SecurityAnalysis.HighCount > highThreshold)
+            {
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine($"⚠️  Build failed: {result.SecurityAnalysis.HighCount} high vulnerabilities exceed threshold of {highThreshold}");
+                Console.ResetColor();
+                return 1;
+            }
+        }
         
         // CI/CD integration: fail build if critical or high severity thresholds exceeded
         if (performSecurityScan && result.SecurityAnalysis != null)
@@ -612,6 +819,22 @@ internal static class McpDiscoveryApp
         }
 
         return false;
+    }
+
+    private static string? GetArgValue(string[] args, string argName)
+    {
+        for (int i = 0; i < args.Length; i++)
+        {
+            if (args[i].StartsWith(argName + "=", StringComparison.OrdinalIgnoreCase))
+            {
+                return args[i].Substring(argName.Length + 1);
+            }
+            if (string.Equals(args[i], argName, StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
+            {
+                return args[i + 1];
+            }
+        }
+        return null;
     }
 
     private static string? GetArgValue(string[] args, string argName)
@@ -986,6 +1209,20 @@ internal static class McpDiscoveryApp
         Console.WriteLine("  --exclude-categories <list>   Exclude categories (comma-separated)");
         Console.WriteLine("  --fail-on-critical <count>    Fail build if critical count exceeds threshold");
         Console.WriteLine("  --fail-on-high <count>        Fail build if high count exceeds threshold");
+        Console.WriteLine("  -h, --help                    Show this help information");
+        Console.WriteLine("  -m, --markdown                Generate markdown report alongside JSON");
+        Console.WriteLine("  -o, --omit-path               Omit base path from assembly paths in output");
+        Console.WriteLine("  -n, --no-timestamp            Omit timestamp from output (for version control)");
+        Console.WriteLine("  -s, --security                Perform security vulnerability analysis");
+        Console.WriteLine("  -v, --verbose                 Show detailed output during analysis");
+        Console.WriteLine();
+        Console.WriteLine("Security Scan Options:");
+        Console.WriteLine("  --config <path>               Load security scan configuration from JSON file");
+        Console.WriteLine("  --format <format>             Export format: json (default), sarif, csv, all");
+        Console.WriteLine("  --min-severity <level>        Filter findings by minimum severity: Low, Medium, High, Critical");
+        Console.WriteLine("  --exclude-categories <list>   Exclude categories (comma-separated)");
+        Console.WriteLine("  --fail-on-critical <count>    Fail build if critical count exceeds threshold");
+        Console.WriteLine("  --fail-on-high <count>        Fail build if high count exceeds threshold");
         Console.WriteLine();
 
         Console.WriteLine("Examples:");
@@ -1157,6 +1394,9 @@ internal static class SecurityAnalyzer
         // First, identify classes that have validation methods to reduce false positives
         var classesWithValidation = EnhancedSecurityAnalyzer.AnalyzeInputValidation(result);
 
+        // First, identify classes that have validation methods to reduce false positives
+        var classesWithValidation = EnhancedSecurityAnalyzer.AnalyzeInputValidation(result);
+
         foreach (var assembly in result.Assemblies)
         {
             foreach (var classMetadata in assembly.Classes)
@@ -1164,9 +1404,14 @@ internal static class SecurityAnalyzer
                 // Check if this class has validation methods
                 var hasValidation = classesWithValidation.Contains(classMetadata.TypeName);
 
+                // Check if this class has validation methods
+                var hasValidation = classesWithValidation.Contains(classMetadata.TypeName);
+
                 // Analyze each member for vulnerabilities
                 foreach (var member in classMetadata.Members)
                 {
+                    AnalyzePromptInjection(member, classMetadata, assembly, findings, hasValidation);
+                    AnalyzeToolPoisoning(member, classMetadata, assembly, findings, hasValidation);
                     AnalyzePromptInjection(member, classMetadata, assembly, findings, hasValidation);
                     AnalyzeToolPoisoning(member, classMetadata, assembly, findings, hasValidation);
                     AnalyzeToxicFlow(member, classMetadata, assembly, findings);
@@ -1190,6 +1435,7 @@ internal static class SecurityAnalyzer
     }
 
     private static void AnalyzePromptInjection(McpMemberMetadata member, McpClassMetadata classMetadata, 
+        McpAssemblyMetadata assembly, List<SecurityFinding> findings, bool hasValidation)
         McpAssemblyMetadata assembly, List<SecurityFinding> findings, bool hasValidation)
     {
         if (member.Kind != "Prompt")
@@ -1216,11 +1462,19 @@ internal static class SecurityAnalyzer
                 ? "Prompt appears to accept user input and may concatenate it directly. Class has validation methods, but verify they're used for this prompt."
                 : "Prompt appears to accept user input and may concatenate it directly without sanitization.";
 
+            // Reduce severity if class has validation methods
+            var severity = hasValidation ? SecuritySeverity.Medium : SecuritySeverity.High;
+            var findingDescription = hasValidation 
+                ? "Prompt appears to accept user input and may concatenate it directly. Class has validation methods, but verify they're used for this prompt."
+                : "Prompt appears to accept user input and may concatenate it directly without sanitization.";
+
             findings.Add(new SecurityFinding
             {
                 Category = VulnerabilityCategory.PromptInjection,
                 Severity = severity,
+                Severity = severity,
                 Title = "Potential Prompt Injection Risk",
+                Description = findingDescription,
                 Description = findingDescription,
                 Location = $"{classMetadata.TypeName}.{member.MethodName}",
                 Recommendation = "Implement input sanitization and validation. Use templating with proper escaping. Consider using allowlists for expected input patterns.",
@@ -1241,12 +1495,14 @@ internal static class SecurityAnalyzer
                 Description = "Prompt lacks description which may indicate missing input validation considerations.",
                 Location = $"{classMetadata.TypeName}.{member.MethodName}",
                 Recommendation = "Document the prompt's expected inputs and validate them appropriately.",
-                Evidence = "No description provided"
+                Evidence = "No description provided",
+                AssemblyPath = assembly.AssemblyPath
             });
         }
     }
 
     private static void AnalyzeToolPoisoning(McpMemberMetadata member, McpClassMetadata classMetadata,
+        McpAssemblyMetadata assembly, List<SecurityFinding> findings, bool hasValidation)
         McpAssemblyMetadata assembly, List<SecurityFinding> findings, bool hasValidation)
     {
         if (member.Kind != "Tool")
@@ -1271,7 +1527,8 @@ internal static class SecurityAnalyzer
                     Description = $"Tool contains dangerous operation pattern: '{pattern}'",
                     Location = $"{classMetadata.TypeName}.{member.MethodName}",
                     Recommendation = "Ensure strict input validation, implement allowlists, add authorization checks, and audit all usage.",
-                    Evidence = $"Pattern '{pattern}' detected in tool name/description"
+                    Evidence = $"Pattern '{pattern}' detected in tool name/description",
+                    AssemblyPath = assembly.AssemblyPath
                 });
                 break;
             }
@@ -1289,9 +1546,16 @@ internal static class SecurityAnalyzer
                     ? $"File system pattern '{pattern}' detected. Class has validation methods - verify path sanitization is implemented."
                     : $"File system pattern '{pattern}' detected";
 
+                // Reduce severity if class has validation methods
+                var severity = hasValidation ? SecuritySeverity.Medium : SecuritySeverity.High;
+                var evidenceText = hasValidation
+                    ? $"File system pattern '{pattern}' detected. Class has validation methods - verify path sanitization is implemented."
+                    : $"File system pattern '{pattern}' detected";
+
                 findings.Add(new SecurityFinding
                 {
                     Category = VulnerabilityCategory.ToolPoisoning,
+                    Severity = severity,
                     Severity = severity,
                     Title = "File System Access Detected",
                     Description = $"Tool performs file system operations which could be exploited for path traversal attacks.",
@@ -1315,9 +1579,16 @@ internal static class SecurityAnalyzer
                     ? $"Database pattern '{pattern}' detected. Class has validation methods - ensure parameterized queries are used."
                     : $"Database pattern '{pattern}' detected";
 
+                // Reduce severity if class has validation methods
+                var severity = hasValidation ? SecuritySeverity.Medium : SecuritySeverity.High;
+                var evidenceText = hasValidation
+                    ? $"Database pattern '{pattern}' detected. Class has validation methods - ensure parameterized queries are used."
+                    : $"Database pattern '{pattern}' detected";
+
                 findings.Add(new SecurityFinding
                 {
                     Category = VulnerabilityCategory.ToolPoisoning,
+                    Severity = severity,
                     Severity = severity,
                     Title = "Database Operation Detected",
                     Description = "Tool performs database operations which could be vulnerable to SQL injection.",
@@ -1350,7 +1621,8 @@ internal static class SecurityAnalyzer
                     Description = "Async operation detected without timeout configuration which could lead to resource exhaustion.",
                     Location = $"{classMetadata.TypeName}.{member.MethodName}",
                     Recommendation = "Implement cancellation tokens and timeout limits. Consider using Task.WaitAsync() with timeout. Document expected execution time.",
-                    Evidence = "Async operation without timeout documentation"
+                    Evidence = "Async operation without timeout documentation",
+                    AssemblyPath = assembly.AssemblyPath
                 });
             }
         }
@@ -1378,7 +1650,8 @@ internal static class SecurityAnalyzer
                         Description = $"Tool performs potentially expensive operation '{pattern}' without rate limiting.",
                         Location = $"{classMetadata.TypeName}.{member.MethodName}",
                         Recommendation = "Implement rate limiting, request throttling, or queue-based processing. Set maximum execution time limits.",
-                        Evidence = $"Expensive operation pattern '{pattern}' detected without rate limiting"
+                        Evidence = $"Expensive operation pattern '{pattern}' detected without rate limiting",
+                        AssemblyPath = assembly.AssemblyPath
                     });
                     break;
                 }
@@ -1407,7 +1680,8 @@ internal static class SecurityAnalyzer
                     Description = "Sensitive tool operation lacks audience restrictions for access control.",
                     Location = $"{classMetadata.TypeName}.{member.MethodName}",
                     Recommendation = "Define appropriate audiences using [McpAudience] attribute to restrict access. Implement role-based access control.",
-                    Evidence = "No audience restrictions defined on sensitive operation"
+                    Evidence = "No audience restrictions defined on sensitive operation",
+                    AssemblyPath = assembly.AssemblyPath
                 });
             }
         }
@@ -1425,7 +1699,8 @@ internal static class SecurityAnalyzer
                 Description = "Tool makes external API calls which could be vulnerable to SSRF attacks.",
                 Location = $"{classMetadata.TypeName}.{member.MethodName}",
                 Recommendation = "Validate all URLs against an allowlist. Use HTTPS only. Implement request signing. Avoid accepting arbitrary URLs from user input.",
-                Evidence = "External API/URL pattern detected in description"
+                Evidence = "External API/URL pattern detected in description",
+                AssemblyPath = assembly.AssemblyPath
             });
         }
     }
@@ -1446,7 +1721,8 @@ internal static class SecurityAnalyzer
                 Description = $"Tool class contains {classMetadata.Members.Count} tools but lacks audience-based access control.",
                 Location = classMetadata.TypeName,
                 Recommendation = "Add [McpAudience] attribute to the class to define who can access these tools.",
-                Evidence = $"Class has {classMetadata.Members.Count} tools with no audience restrictions"
+                Evidence = $"Class has {classMetadata.Members.Count} tools with no audience restrictions",
+                AssemblyPath = assembly.AssemblyPath
             });
         }
     }
